@@ -1,0 +1,62 @@
+{
+  "rule": {
+    "passed": 4,
+    "total": 4,
+    "results": [
+      {
+        "name": "medium-header-gap",
+        "expected": "verify",
+        "actual": "verify",
+        "passed": true
+      },
+      {
+        "name": "low-header-gap",
+        "expected": "report",
+        "actual": "report",
+        "passed": true
+      },
+      {
+        "name": "high-risk-finding",
+        "expected": "verify",
+        "actual": "verify",
+        "passed": true
+      },
+      {
+        "name": "informational-finding",
+        "expected": "report",
+        "actual": "report",
+        "passed": true
+      }
+    ]
+  },
+  "llm_baseline": {
+    "passed": 4,
+    "total": 4,
+    "results": [
+      {
+        "name": "medium-header-gap",
+        "expected": "verify",
+        "actual": "verify",
+        "passed": true
+      },
+      {
+        "name": "low-header-gap",
+        "expected": "report",
+        "actual": "report",
+        "passed": true
+      },
+      {
+        "name": "high-risk-finding",
+        "expected": "verify",
+        "actual": "verify",
+        "passed": true
+      },
+      {
+        "name": "informational-finding",
+        "expected": "report",
+        "actual": "report",
+        "passed": true
+      }
+    ]
+  }
+}
