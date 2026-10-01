@@ -43,3 +43,15 @@ The current LLM adapter is local and deterministic; it makes no network calls.
 ## Project status
 
 v0.2 architecture: scanner + decision layer + LLM boundary + tests.
+
+
+## Decision provider
+
+The CLI uses the deterministic rule engine by default and makes no LLM API calls. To opt in to the OpenAI-compatible provider, set the API key in your shell environment and pass `--decision-provider llm`:
+
+```powershell
+$env:AI_SECURITY_LLM_API_KEY = "your-key"
+ai-security-agent http://127.0.0.1:8080 --decision-provider llm
+```
+
+The provider defaults to `https://api.openai.com/v1` and model `gpt-4o-mini`. Set `AI_SECURITY_LLM_BASE_URL` or `AI_SECURITY_LLM_MODEL` to use a compatible endpoint or another model. The provider sends each finding's title, severity, evidence, and recommendation to that endpoint. Decisions are constrained to `report` or `verify`; they do not execute verification actions. The JSON report includes these decisions when the provider is used (and retains the existing format when omitted).
