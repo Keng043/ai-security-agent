@@ -39,6 +39,37 @@ class LLMProviderTests(unittest.TestCase):
         self.assertEqual(captured["timeout"], 20.0)
         self.assertEqual(captured["payload"]["temperature"], 0)
 
+    def test_rejects_remote_plain_http_before_sending_credentials(self):
+        with patch.dict(os.environ, {
+            "AI_SECURITY_LLM_API_KEY": "mock",
+            "AI_SECURITY_LLM_BASE_URL": "http://api.example.test/v1",
+        }, clear=True):
+            provider = OpenAICompatibleDecisionProvider(
+                transport=lambda *_a, **_k: self.fail("insecure endpoint was called")
+            )
+            with self.assertRaisesRegex(ValueError, "must use HTTPS"):
+                provider.decide(self.finding)
+
+    def test_allows_http_loopback_for_local_test_servers(self):
+        captured = {}
+        def transport(request, timeout):
+            captured["url"] = request.full_url
+            return FakeResponse({"action": "report", "reason": "Local", "confidence": 0.5})
+        with patch.dict(os.environ, {
+            "AI_SECURITY_LLM_API_KEY": "mock",
+            "AI_SECURITY_LLM_BASE_URL": "http://127.0.0.1:8081/v1",
+        }, clear=True):
+            OpenAICompatibleDecisionProvider(transport=transport).decide(self.finding)
+        self.assertEqual(captured["url"], "http://127.0.0.1:8081/v1/chat/completions")
+
+    def test_rejects_embedded_credentials_in_endpoint_url(self):
+        with patch.dict(os.environ, {
+            "AI_SECURITY_LLM_API_KEY": "mock",
+            "AI_SECURITY_LLM_BASE_URL": "https://user:pass@example.test/v1",
+        }, clear=True):
+            with self.assertRaisesRegex(ValueError, "embedded credentials"):
+                OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: self.fail("request called")).decide(self.finding)
+
     def test_provider_integrates_with_pipeline_without_replacing_local_analysis(self):
         with patch.dict(os.environ, {"AI_SECURITY_LLM_API_KEY": "mock"}, clear=True):
             provider = OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: FakeResponse(

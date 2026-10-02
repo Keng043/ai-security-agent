@@ -1,10 +1,12 @@
 """Environment-configured OpenAI-compatible decision provider."""
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 from dataclasses import dataclass
 from typing import Callable
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .decision_engine import Decision
@@ -34,6 +36,7 @@ class OpenAICompatibleDecisionProvider:
         if not api_key:
             raise RuntimeError(f"Set {self.api_key_env} to use the LLM decision provider")
         base_url = os.environ.get(self.base_url_env, "https://api.openai.com/v1").rstrip("/")
+        _validate_base_url(base_url)
         model = os.environ.get(self.model_env, "gpt-4o-mini")
         payload = {
             "model": model,
@@ -68,3 +71,30 @@ class OpenAICompatibleDecisionProvider:
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
             raise ValueError("LLM returned an invalid confidence; expected a number from 0 to 1")
         return Decision(finding.check, action, reason.strip(), float(confidence))
+
+
+def _validate_base_url(base_url: str) -> None:
+    """Prevent sending bearer credentials to a remote plaintext endpoint."""
+    try:
+        parsed = urlsplit(base_url)
+        hostname = parsed.hostname
+        # Accessing port validates malformed port syntax too.
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("LLM base URL is invalid") from exc
+
+    if parsed.scheme not in {"https", "http"} or not hostname:
+        raise ValueError("LLM base URL must be an absolute HTTP(S) URL")
+    if parsed.username is not None or parsed.password is not None:
+        raise ValueError("LLM base URL must not contain embedded credentials")
+    if parsed.query or parsed.fragment:
+        raise ValueError("LLM base URL must not contain a query or fragment")
+    if parsed.scheme == "https":
+        return
+
+    try:
+        is_loopback = ipaddress.ip_address(hostname).is_loopback
+    except ValueError:
+        is_loopback = hostname.lower() == "localhost"
+    if not is_loopback:
+        raise ValueError("LLM base URL must use HTTPS unless it targets localhost")
