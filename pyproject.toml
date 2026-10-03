@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "AI-assisted vulnerability assessment for authorized local security labs"
 requires-python = ">=3.11"
 
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
 [project.scripts]
 ai-security-agent = "agent.cli:main"
 

@@ -2,8 +2,9 @@ import json
 import os
 import unittest
 from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
-from agent.llm_provider import OpenAICompatibleDecisionProvider
+from agent.llm_provider import LLMProviderError, OpenAICompatibleDecisionProvider
 from agent.models import Finding
 from agent.pipeline import AssessmentPipeline
 
@@ -47,7 +48,7 @@ class LLMProviderTests(unittest.TestCase):
             provider = OpenAICompatibleDecisionProvider(
                 transport=lambda *_a, **_k: self.fail("insecure endpoint was called")
             )
-            with self.assertRaisesRegex(ValueError, "must use HTTPS"):
+            with self.assertRaisesRegex(LLMProviderError, "must use HTTPS"):
                 provider.decide(self.finding)
 
     def test_allows_http_loopback_for_local_test_servers(self):
@@ -67,7 +68,7 @@ class LLMProviderTests(unittest.TestCase):
             "AI_SECURITY_LLM_API_KEY": "mock",
             "AI_SECURITY_LLM_BASE_URL": "https://user:pass@example.test/v1",
         }, clear=True):
-            with self.assertRaisesRegex(ValueError, "embedded credentials"):
+            with self.assertRaisesRegex(LLMProviderError, "embedded credentials"):
                 OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: self.fail("request called")).decide(self.finding)
 
     def test_provider_integrates_with_pipeline_without_replacing_local_analysis(self):
@@ -83,15 +84,47 @@ class LLMProviderTests(unittest.TestCase):
 
     def test_requires_api_key_without_network(self):
         with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(RuntimeError, "AI_SECURITY_LLM_API_KEY"):
+            with self.assertRaisesRegex(LLMProviderError, "AI_SECURITY_LLM_API_KEY"):
                 OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: self.fail("network called")).decide(self.finding)
+
+    def test_converts_timeout_to_clear_provider_error(self):
+        with patch.dict(os.environ, {"AI_SECURITY_LLM_API_KEY": "mock"}, clear=True):
+            provider = OpenAICompatibleDecisionProvider(
+                transport=lambda *_a, **_k: (_ for _ in ()).throw(TimeoutError())
+            )
+            with self.assertRaisesRegex(LLMProviderError, "timed out"):
+                provider.decide(self.finding)
+
+    def test_converts_http_error_without_exposing_response_body(self):
+        error = HTTPError("https://example.test", 401, "Unauthorized", {}, None)
+        error.read = lambda: b"private response detail"
+        with patch.dict(os.environ, {"AI_SECURITY_LLM_API_KEY": "mock-secret"}, clear=True):
+            provider = OpenAICompatibleDecisionProvider(
+                transport=lambda *_a, **_k: (_ for _ in ()).throw(error)
+            )
+            with self.assertRaisesRegex(LLMProviderError, "HTTP 401") as caught:
+                provider.decide(self.finding)
+        self.assertNotIn("private response detail", str(caught.exception))
+        self.assertNotIn("mock-secret", str(caught.exception))
+
+    def test_converts_connection_and_malformed_response_errors(self):
+        with patch.dict(os.environ, {"AI_SECURITY_LLM_API_KEY": "mock"}, clear=True):
+            with self.assertRaisesRegex(LLMProviderError, "Could not connect"):
+                OpenAICompatibleDecisionProvider(
+                    transport=lambda *_a, **_k: (_ for _ in ()).throw(URLError("offline"))
+                ).decide(self.finding)
+            malformed = FakeResponse({"action": "report", "reason": "ok", "confidence": 0.5})
+            malformed.read = lambda: b"not-json"
+            with self.assertRaisesRegex(LLMProviderError, "invalid JSON"):
+                OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: malformed).decide(self.finding)
 
     def test_rejects_unsupported_action_and_unbounded_confidence(self):
         for value in ({"action": "execute", "reason": "bad", "confidence": 0.5},
+                      {"action": ["verify"], "reason": "bad", "confidence": 0.5},
                       {"action": "report", "reason": "bad", "confidence": 2}):
             with self.subTest(value=value), patch.dict(os.environ, {"AI_SECURITY_LLM_API_KEY": "mock"}, clear=True):
                 provider = OpenAICompatibleDecisionProvider(transport=lambda *_a, **_k: FakeResponse(value))
-                with self.assertRaises(ValueError):
+                with self.assertRaises(LLMProviderError):
                     provider.decide(self.finding)
 
 

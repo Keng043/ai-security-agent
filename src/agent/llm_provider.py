@@ -6,11 +6,16 @@ import json
 import os
 from dataclasses import dataclass
 from typing import Callable
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from .decision_engine import Decision
 from .models import Finding
+
+
+class LLMProviderError(RuntimeError):
+    """A safe, user-facing failure from LLM configuration or response handling."""
 
 
 @dataclass(frozen=True)
@@ -34,7 +39,7 @@ class OpenAICompatibleDecisionProvider:
     def decide(self, finding: Finding) -> Decision:
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
-            raise RuntimeError(f"Set {self.api_key_env} to use the LLM decision provider")
+            raise LLMProviderError(f"Set {self.api_key_env} to use the LLM decision provider")
         base_url = os.environ.get(self.base_url_env, "https://api.openai.com/v1").rstrip("/")
         _validate_base_url(base_url)
         model = os.environ.get(self.model_env, "gpt-4o-mini")
@@ -57,19 +62,37 @@ class OpenAICompatibleDecisionProvider:
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             method="POST",
         )
-        with self.transport(request, timeout=self.timeout) as response:
-            result = json.loads(response.read().decode("utf-8"))
-        content = result["choices"][0]["message"]["content"]
-        decision = json.loads(content)
+        try:
+            with self.transport(request, timeout=self.timeout) as response:
+                result = json.loads(response.read().decode("utf-8"))
+            content = result["choices"][0]["message"]["content"]
+            decision = json.loads(content)
+        except HTTPError as exc:
+            raise LLMProviderError(
+                f"LLM endpoint returned HTTP {exc.code}; check the API key, rate limit, and endpoint settings."
+            ) from None
+        except TimeoutError:
+            raise LLMProviderError("LLM request timed out; try again later.") from None
+        except URLError:
+            raise LLMProviderError("Could not connect to the LLM endpoint; check the endpoint and network.") from None
+        except OSError:
+            raise LLMProviderError("LLM request failed at the network layer; check connectivity and try again.") from None
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            raise LLMProviderError("LLM endpoint returned invalid JSON or text encoding.") from None
+        except (IndexError, KeyError, TypeError):
+            raise LLMProviderError("LLM endpoint returned a response in an unsupported format.") from None
+
+        if not isinstance(decision, dict):
+            raise LLMProviderError("LLM endpoint returned a decision that is not a JSON object.")
         action = decision.get("action")
         reason = decision.get("reason")
         confidence = decision.get("confidence")
-        if action not in {"report", "verify"}:
-            raise ValueError("LLM returned an unsupported decision action")
+        if not isinstance(action, str) or action not in {"report", "verify"}:
+            raise LLMProviderError("LLM returned an unsupported decision action.")
         if not isinstance(reason, str) or not reason.strip():
-            raise ValueError("LLM returned an invalid decision reason")
+            raise LLMProviderError("LLM returned an invalid decision reason.")
         if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
-            raise ValueError("LLM returned an invalid confidence; expected a number from 0 to 1")
+            raise LLMProviderError("LLM returned an invalid confidence; expected a number from 0 to 1.")
         return Decision(finding.check, action, reason.strip(), float(confidence))
 
 
@@ -81,14 +104,14 @@ def _validate_base_url(base_url: str) -> None:
         # Accessing port validates malformed port syntax too.
         _ = parsed.port
     except ValueError as exc:
-        raise ValueError("LLM base URL is invalid") from exc
+        raise LLMProviderError("LLM base URL is invalid") from exc
 
     if parsed.scheme not in {"https", "http"} or not hostname:
-        raise ValueError("LLM base URL must be an absolute HTTP(S) URL")
+        raise LLMProviderError("LLM base URL must be an absolute HTTP(S) URL")
     if parsed.username is not None or parsed.password is not None:
-        raise ValueError("LLM base URL must not contain embedded credentials")
+        raise LLMProviderError("LLM base URL must not contain embedded credentials")
     if parsed.query or parsed.fragment:
-        raise ValueError("LLM base URL must not contain a query or fragment")
+        raise LLMProviderError("LLM base URL must not contain a query or fragment")
     if parsed.scheme == "https":
         return
 
@@ -97,4 +120,4 @@ def _validate_base_url(base_url: str) -> None:
     except ValueError:
         is_loopback = hostname.lower() == "localhost"
     if not is_loopback:
-        raise ValueError("LLM base URL must use HTTPS unless it targets localhost")
+        raise LLMProviderError("LLM base URL must use HTTPS unless it targets localhost")

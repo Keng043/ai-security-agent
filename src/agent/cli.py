@@ -1,8 +1,9 @@
 import argparse
+import sys
 
 from .decision_engine import RuleDecisionEngine
 from .http_scanner import scan_http
-from .llm_provider import OpenAICompatibleDecisionProvider
+from .llm_provider import LLMProviderError, OpenAICompatibleDecisionProvider
 from .pipeline import AssessmentPipeline
 from .report import write_json
 
@@ -31,7 +32,11 @@ def create_pipeline(provider: str = "rule") -> AssessmentPipeline:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     target, findings = scan_http(args.url)
-    result = create_pipeline(args.decision_provider).run(target, findings)
+    try:
+        result = create_pipeline(args.decision_provider).run(target, findings)
+    except LLMProviderError as exc:
+        print(f"Decision provider error: {exc}", file=sys.stderr)
+        raise SystemExit(2) from None
     write_json(args.report, target, findings, decisions=result["decisions"])
     print(f"Target: {target['url']}")
     print(f"Status: {target['status']}")
