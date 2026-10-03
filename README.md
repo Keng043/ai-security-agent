@@ -38,7 +38,7 @@ The MVP separates responsibilities deliberately:
 - LLM adapter explains evidence and remediation
 - future Jev integration can replace the decision layer without giving the LLM unrestricted execution
 
-The current LLM adapter is local and deterministic; it makes no network calls.
+The default analysis adapter is deterministic and makes no network calls. An opt-in local LLM can explain findings; the rule engine still controls report/verify decisions.
 
 ## Project status
 
@@ -55,3 +55,17 @@ ai-security-agent http://127.0.0.1:8080 --decision-provider llm
 ```
 
 The provider defaults to `https://api.openai.com/v1` and model `gpt-4o-mini`. Set `AI_SECURITY_LLM_BASE_URL` or `AI_SECURITY_LLM_MODEL` to use a compatible endpoint or another model. The provider sends each finding's title, severity, evidence, and recommendation to that endpoint. Decisions are constrained to `report` or `verify`; they do not execute verification actions. The JSON report includes these decisions when the provider is used (and retains the existing format when omitted).
+
+
+## Local LLM for explanations
+
+The deterministic rule engine remains responsible for `report` versus `verify`. To use a locally running OpenAI-compatible model only to explain findings and suggest remediation, start a local inference server, set the model name it serves, and pass `--analysis-provider local-llm`:
+
+```powershell
+$env:AI_SECURITY_LOCAL_LLM_MODEL = "your-local-model-name"
+# Optional; defaults to http://127.0.0.1:11434/v1
+$env:AI_SECURITY_LOCAL_LLM_BASE_URL = "http://127.0.0.1:11434/v1"
+ai-security-agent http://127.0.0.1:8080 --analysis-provider local-llm
+```
+
+This mode requires an OpenAI-compatible Chat Completions endpoint running on localhost; it sends no API key and rejects non-loopback hosts. The local model's output cannot set severity or select the decision action. Explanations and remediation are added to the JSON report. Model installation and hardware requirements depend on the local inference server and selected model.
