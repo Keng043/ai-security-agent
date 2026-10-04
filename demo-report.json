@@ -1,0 +1,72 @@
+{
+  "target": {
+    "url": "http://127.0.0.1:8000",
+    "status": 200,
+    "headers": {
+      "Server": "SimpleHTTP/0.6 Python/3.14.7",
+      "Date": "Sat, 03 Oct 2026 15:57:32 GMT",
+      "Content-type": "text/html; charset=utf-8",
+      "Content-Length": "602"
+    }
+  },
+  "findings": [
+    {
+      "check": "http_headers",
+      "title": "Missing Content-Security-Policy",
+      "severity": "medium",
+      "evidence": "Content-Security-Policy was not present in the response.",
+      "recommendation": "Add a restrictive Content-Security-Policy."
+    },
+    {
+      "check": "http_headers",
+      "title": "Missing X-Content-Type-Options",
+      "severity": "low",
+      "evidence": "X-Content-Type-Options was not present in the response.",
+      "recommendation": "Set X-Content-Type-Options: nosniff."
+    },
+    {
+      "check": "http_headers",
+      "title": "Missing X-Frame-Options",
+      "severity": "low",
+      "evidence": "X-Frame-Options was not present in the response.",
+      "recommendation": "Set X-Frame-Options or use frame-ancestors in CSP."
+    }
+  ],
+  "decisions": [
+    {
+      "finding_check": "http_headers",
+      "action": "verify",
+      "reason": "Finding is medium-or-higher severity; collect additional evidence before escalation.",
+      "confidence": 1.0
+    },
+    {
+      "finding_check": "http_headers",
+      "action": "report",
+      "reason": "Low-impact posture issue can be reported without active verification.",
+      "confidence": 1.0
+    },
+    {
+      "finding_check": "http_headers",
+      "action": "report",
+      "reason": "Low-impact posture issue can be reported without active verification.",
+      "confidence": 1.0
+    }
+  ],
+  "analysis": [
+    {
+      "title": "Missing Content-Security-Policy",
+      "explanation": "Content-Security-Policy was not present in the response.",
+      "remediation": "Add a restrictive Content-Security-Policy."
+    },
+    {
+      "title": "Missing X-Content-Type-Options",
+      "explanation": "X-Content-Type-Options was not present in the response.",
+      "remediation": "Set X-Content-Type-Options: nosniff."
+    },
+    {
+      "title": "Missing X-Frame-Options",
+      "explanation": "X-Frame-Options was not present in the response.",
+      "remediation": "Set X-Frame-Options or use frame-ancestors in CSP."
+    }
+  ]
+}
